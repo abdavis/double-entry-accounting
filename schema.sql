@@ -41,4 +41,34 @@ CREATE TABLE transaction_detail(
     PRIMARY KEY(transaction_id, dr, cr)
 );
 
+--views
 
+create view last_balance as select id, date, amount from (
+    select b.*, row_number() over (partition by id order by date desc) as rn
+    from balance b 
+)
+where rn = 1;
+
+create view current_balance as select account.id, coalesce(debits.amount, 0::money) - coalesce(credits.amount, 0::money) as amount from account
+left join last_balance
+    on account.id = last_balance.id
+left join lateral (
+    select dr, sum(amount) as amount
+    from transaction_detail
+    inner join transaction
+        on transaction.id = transaction_detail.transaction_id
+    where last_balance.date is null
+        or transaction.date >= last_balance.date
+    group by dr
+) as debits
+    on debits.dr = account.id
+left join lateral (
+    select cr, sum(amount) as amount
+    from transaction_detail
+    inner join transaction
+        on transaction.id = transaction_detail.transaction_id
+    where last_balance.date is null
+        or transaction.date >= last_balance.date
+    group by cr
+) as credits
+    on credits.cr = account.id;
