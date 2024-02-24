@@ -51,10 +51,27 @@ FROM (
 WHERE RN = 1;
 
 
-CREATE VIEW current_balance AS SELECT account.id, COALESCE(debits.amount, 0::MONEY) - COALESCE(credits.amount, 0::MONEY) AS amount
-FROM account
-LEFT JOIN last_balance
-    ON account.id = last_balance.id
+CREATE VIEW current_balance AS 
+with recursive account_kind(id,  parent, kind) AS (
+    select id, parent, NULL::account_type
+    from account
+    union all
+    select account_kind.id, account_category.parent, account_category.kind
+    from account_kind
+    inner join account_category
+        on account_kind.parent = account_category.id
+    where account_category.id = account_kind.parent 
+    
+)
+SELECT account_kind.id, COALESCE(last_balance.amount, 0::MONEY) + 
+    (COALESCE(debits.amount, 0::MONEY) - COALESCE(credits.amount, 0::MONEY)) *
+        case when kind in ('asset', 'expense') then 1
+            else -1
+        end
+        AS amount
+from account_kind
+lEFT JOIN last_balance
+    ON account_kind.id = last_balance.id
 LEFT JOIN LATERAL (
     SELECT dr, SUM(amount) amount
     FROM transaction_detail
@@ -64,7 +81,7 @@ LEFT JOIN LATERAL (
         OR transaction.date >= last_balance.date
     GROUP BY dr
 ) debits
-    ON debits.dr = account.id
+    ON debits.dr = account_kind.id
 LEFT JOIN lateral (
     SELECT cr, SUM(amount) amount
     FROM transaction_detail
@@ -74,4 +91,6 @@ LEFT JOIN lateral (
         OR transaction.date >= last_balance.date
     GROUP BY cr
 ) credits
-    ON credits.cr = account.id;
+    ON credits.cr = account_kind.id
+where kind is not null
+;
