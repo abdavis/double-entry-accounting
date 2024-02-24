@@ -50,27 +50,31 @@ FROM (
 )
 WHERE RN = 1;
 
+CREATE VIEW account_kind AS 
+WITH RECURSIVE t(id, parent, kind) AS (
+    SELECT id, parent, NULL::account_type
+    FROM account
+    UNION ALL
+    SELECT t.id, account_category.parent, account_category.kind
+    FROM t
+    INNER JOIN account_category
+        ON t.parent = account_category.id
+    WHERE account_category.id = t.parent
+)
+SELECT id, kind
+FROM t 
+WHERE kind IS NOT NULL
+;
 
 CREATE VIEW current_balance AS 
-with recursive account_kind(id,  parent, kind) AS (
-    select id, parent, NULL::account_type
-    from account
-    union all
-    select account_kind.id, account_category.parent, account_category.kind
-    from account_kind
-    inner join account_category
-        on account_kind.parent = account_category.id
-    where account_category.id = account_kind.parent 
-    
-)
-SELECT account_kind.id, COALESCE(last_balance.amount, 0::MONEY) + 
+SELECT account_kind.id, account_kind.kind, COALESCE(last_balance.amount, 0::MONEY) +
     (COALESCE(debits.amount, 0::MONEY) - COALESCE(credits.amount, 0::MONEY)) *
-        case when kind in ('asset', 'expense') then 1
-            else -1
-        end
-        AS amount
-from account_kind
-lEFT JOIN last_balance
+    CASE WHEN kind IN ('asset', 'expense') THEN 1
+        ELSE -1
+    END
+    AS amount
+FROM account_kind
+LEFT JOIN last_balance
     ON account_kind.id = last_balance.id
 LEFT JOIN LATERAL (
     SELECT dr, SUM(amount) amount
@@ -82,7 +86,7 @@ LEFT JOIN LATERAL (
     GROUP BY dr
 ) debits
     ON debits.dr = account_kind.id
-LEFT JOIN lateral (
+LEFT JOIN LATERAL (
     SELECT cr, SUM(amount) amount
     FROM transaction_detail
     INNER JOIN transaction
@@ -92,5 +96,4 @@ LEFT JOIN lateral (
     GROUP BY cr
 ) credits
     ON credits.cr = account_kind.id
-where kind is not null
 ;
