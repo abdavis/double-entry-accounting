@@ -43,32 +43,35 @@ CREATE TABLE transaction_detail(
 
 --views
 
-create view last_balance as select id, date, amount from (
-    select b.*, row_number() over (partition by id order by date desc) as rn
-    from balance b 
+CREATE VIEW last_balance AS SELECT id, date, amount
+FROM (
+    SELECT b.*, ROW_NUMBER() OVER (PARTITION BY id ORDER BY date DESC) AS rn
+    FROM balance b
 )
-where rn = 1;
+WHERE RN = 1;
 
-create view current_balance as select account.id, coalesce(debits.amount, 0::money) - coalesce(credits.amount, 0::money) as amount from account
-left join last_balance
-    on account.id = last_balance.id
-left join lateral (
-    select dr, sum(amount) as amount
-    from transaction_detail
-    inner join transaction
-        on transaction.id = transaction_detail.transaction_id
-    where last_balance.date is null
-        or transaction.date >= last_balance.date
-    group by dr
-) as debits
-    on debits.dr = account.id
-left join lateral (
-    select cr, sum(amount) as amount
-    from transaction_detail
-    inner join transaction
-        on transaction.id = transaction_detail.transaction_id
-    where last_balance.date is null
-        or transaction.date >= last_balance.date
-    group by cr
-) as credits
-    on credits.cr = account.id;
+
+CREATE VIEW current_balance AS SELECT account.id, COALESCE(debits.amount, 0::MONEY) - COALESCE(credits.amount, 0::MONEY) AS amount
+FROM account
+LEFT JOIN last_balance
+    ON account.id = last_balance.id
+LEFT JOIN LATERAL (
+    SELECT dr, SUM(amount) amount
+    FROM transaction_detail
+    INNER JOIN transaction
+        ON transaction.id = transaction_detail.transaction_id
+    WHERE last_balance.date IS NULL
+        OR transaction.date >= last_balance.date
+    GROUP BY dr
+) debits
+    ON debits.dr = account.id
+LEFT JOIN lateral (
+    SELECT cr, SUM(amount) amount
+    FROM transaction_detail
+    INNER JOIN transaction
+        ON transaction.id = transaction_detail.transaction_id
+    WHERE last_balance.date IS NULL
+        OR transaction.date >= last_balance.date
+    GROUP BY cr
+) credits
+    ON credits.cr = account.id;
