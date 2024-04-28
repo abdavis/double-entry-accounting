@@ -51,11 +51,11 @@ FROM (
 WHERE RN = 1;
 
 CREATE VIEW account_kind AS 
-WITH RECURSIVE t(id, parent, kind) AS (
-    SELECT id, parent, NULL::account_type
+WITH RECURSIVE t(id, parent, kind, path) AS (
+    SELECT id, parent, NULL::account_type, NULL::INTEGER[]
     FROM account
     UNION ALL
-    SELECT t.id, account_category.parent, account_category.kind
+    SELECT t.id, account_category.parent, account_category.kind, array_append(account_category.id, path)
     FROM t
     INNER JOIN account_category
         ON t.parent = account_category.id
