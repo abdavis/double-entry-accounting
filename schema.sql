@@ -45,23 +45,24 @@ CREATE TABLE transaction_detail(
 
 CREATE VIEW last_balance AS SELECT id, date, amount
 FROM (
-    SELECT b.*, ROW_NUMBER() OVER (PARTITION BY id ORDER BY date DESC) AS rn
+    SELECT b.id, b.date, b.amount, ROW_NUMBER() OVER (PARTITION BY id ORDER BY date DESC) AS rn
     FROM balance b
-)
-WHERE RN = 1;
+) AS t
+WHERE rn = 1;
 
 CREATE VIEW account_kind AS 
-WITH RECURSIVE t(id, parent, kind, path) AS (
-    SELECT id, parent, NULL::account_type, NULL::INTEGER[]
+WITH RECURSIVE t(id, parent, kind, is_cycle, path) AS (
+    SELECT id, parent, NULL::account_type, FALSE, NULL::INTEGER[]
     FROM account
     UNION ALL
-    SELECT t.id, account_category.parent, account_category.kind, array_append(account_category.id, path)
+    SELECT t.id, account_category.parent, account_category.kind, account_category.id = ANY(path), path || account_category.id
     FROM t
     INNER JOIN account_category
         ON t.parent = account_category.id
     WHERE account_category.id = t.parent
+        AND NOT is_cycle
 )
-SELECT id, kind
+SELECT id, kind, path
 FROM t 
 WHERE kind IS NOT NULL
 ;
