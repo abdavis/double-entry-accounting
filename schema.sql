@@ -50,10 +50,10 @@ FROM (
 ) AS t
 WHERE rn = 1;
 
-CREATE VIEW account_kind AS 
+CREATE VIEW account_ancestry AS 
 WITH RECURSIVE t(id, parent, kind, is_cycle, path) AS (
-    SELECT id, parent, NULL::account_type, FALSE, NULL::INTEGER[]
-    FROM account
+    SELECT id, parent, kind, FALSE, NULL::INTEGER[]
+    FROM account_category
     UNION ALL
     SELECT t.id, account_category.parent, account_category.kind, account_category.id = ANY(path), path || account_category.id
     FROM t
@@ -68,15 +68,17 @@ WHERE kind IS NOT NULL
 ;
 
 CREATE VIEW current_balance AS 
-SELECT account_kind.id, account_kind.kind, COALESCE(last_balance.amount, 0::MONEY) +
+SELECT account.id, account_ancestry.kind, COALESCE(last_balance.amount, 0::MONEY) +
     (COALESCE(debits.amount, 0::MONEY) - COALESCE(credits.amount, 0::MONEY)) *
     CASE WHEN kind IN ('asset', 'expense') THEN 1
         ELSE -1
     END
     AS amount
-FROM account_kind
+FROM account
+INNER JOIN account_ancestry
+on account.parent = account_ancestry.id
 LEFT JOIN last_balance
-    ON account_kind.id = last_balance.id
+    ON account.id = last_balance.id
 LEFT JOIN LATERAL (
     SELECT dr, SUM(amount) amount
     FROM transaction_detail
@@ -86,7 +88,7 @@ LEFT JOIN LATERAL (
         OR transaction.date >= last_balance.date
     GROUP BY dr
 ) debits
-    ON debits.dr = account_kind.id
+    ON debits.dr = account.id
 LEFT JOIN LATERAL (
     SELECT cr, SUM(amount) amount
     FROM transaction_detail
@@ -96,5 +98,5 @@ LEFT JOIN LATERAL (
         OR transaction.date >= last_balance.date
     GROUP BY cr
 ) credits
-    ON credits.cr = account_kind.id
+    ON credits.cr = account.id
 ;
